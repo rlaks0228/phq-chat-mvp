@@ -1,0 +1,17 @@
+{
+  "name": "phq-chat-mvp",
+  "version": "1.0.0",
+  "description": "PHQ-9 스크리닝 + 근처 상담소 추천 + GPT 요약 (웹 MVP)",
+  "main": "server.js",
+  "type": "module",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "csv-parse": "^5.5.6",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "node-fetch": "^3.3.2",
+    "openai": "^4.57.0"
+  }
+}
