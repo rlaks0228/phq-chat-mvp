@@ -11,6 +11,7 @@
     .bot{background:#f5f5f5;align-self:flex-start;}
     .phq-card{border:1px solid #ddd;border-radius:12px;padding:12px;margin:10px 0;background:#fff;}
     .chat-area{display:flex;flex-direction:column;height:520px;overflow-y:auto;background:white;padding:12px;border:1px solid #e5e7eb;border-radius:10px;}
+    a.link{color:#1d4ed8;text-decoration:underline;}
   </style>
 </head>
 <body class="bg-gray-50">
@@ -20,7 +21,6 @@
       이 서비스는 <b>선별(Screening)</b>과 <b>연결</b>을 돕기 위한 도구입니다. 진단이나 치료가 아닙니다.
     </p>
 
-    <!-- 본문: 좌우 2열 -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-2">
       <!-- 좌: PHQ-9 -->
       <div>
@@ -67,7 +67,7 @@
   </div>
 
   <script>
-    // ======================== 공통 함수 ========================
+    /* =============== 공통 =============== */
     function pushBubble(text, who='bot'){
       const chatArea=document.getElementById('chatArea');
       const div=document.createElement('div');
@@ -77,7 +77,7 @@
       chatArea.scrollTop=chatArea.scrollHeight;
     }
 
-    // ======================== 챗봇 (시연 고정) ========================
+    /* =============== 챗봇: 시연 고정 스크립트 =============== */
     const SCRIPT=[
       "안녕, 여긴 마음도움 챗이야. 오늘 하루 어땠어?",
       "음, 쉽지 않았겠다. 이렇게 말해줘서 정말 고마워.",
@@ -108,7 +108,7 @@
     };
     chatInput.addEventListener('keydown',e=>{if(e.key==='Enter')sendBtn.click();});
 
-    // ======================== PHQ-9 (자동완료 제거) ========================
+    /* =============== PHQ-9: 클라이언트 해석(서버 호출 없음) =============== */
     const PHQ=[
       "일(공부)에 흥미나 즐거움이 거의 없다",
       "기분이 가라앉거나, 우울하거나, 희망이 없다",
@@ -121,7 +121,9 @@
       "차라리 죽는 것이 낫겠다는 생각을 하거나, 자신을 해칠 생각을 했다"
     ];
     const CHOICES=["전혀 아니다(0)","몇 일 동안(1)","일주일 이상(2)","거의 매일(3)"];
-    let idx=0, answers=Array(9).fill(null), userLat=null, userLng=null;
+
+    let idx=0, answers=Array(9).fill(null);
+    let userLat=null, userLng=null; // 향후 지오링크용(선택)
 
     const startBtn=document.getElementById('startBtn');
     const phqPanel=document.getElementById('phqPanel');
@@ -132,14 +134,17 @@
     const centersBox=document.getElementById('centersBox');
 
     startBtn.onclick=()=>{
-      idx=0;answers=Array(9).fill(null);
+      idx=0; answers=Array(9).fill(null);
       phqPanel.classList.remove('hidden');
-      resultBox.innerHTML='';centersBox.innerHTML='';
+      resultBox.innerHTML=''; centersBox.innerHTML='';
       renderQ();
+
+      // 위치 권한은 선택. 추후 지도 링크에 활용 가능
       if(navigator.geolocation){
         navigator.geolocation.getCurrentPosition(
-          p=>{userLat=p.coords.latitude;userLng=p.coords.longitude;},()=>{},
-          {enableHighAccuracy:false,timeout:5000,maximumAge:0});
+          (p)=>{ userLat=p.coords.latitude; userLng=p.coords.longitude; },
+          ()=>{}, { enableHighAccuracy:false, timeout:4000, maximumAge:0 }
+        );
       }
     };
 
@@ -155,27 +160,65 @@
             </label>`).join('')}
         </div>`;
     }
-    prevBtn.onclick=()=>{if(idx>0){idx--;renderQ();}};
-    nextBtn.onclick=async()=>{
+
+    prevBtn.onclick=()=>{ if(idx>0){ idx--; renderQ(); } };
+
+    nextBtn.onclick=()=>{
       const sel=document.querySelector('input[name="ans"]:checked');
-      if(!sel){alert('하나를 선택해 주세요');return;}
+      if(!sel){ alert('하나를 선택해 주세요'); return; }
       answers[idx]=Number(sel.value);
-      if(idx<8){idx++;renderQ();return;}
-      await submitPhq();
+      if(idx<8){ idx++; renderQ(); return; }
+      submitPhqLocal(); // 서버 호출 없이 해석
     };
 
-    async function submitPhq(){
+    function severityLabel(total){
+      if(total<=4) return "없음/최소";
+      if(total<=9) return "경도";
+      if(total<=14) return "중등도";
+      if(total<=19) return "중등도-중증";
+      return "중증";
+    }
+
+    function supportiveText(total, sev, crisis){
+      if(crisis){
+        return "[고위험] 지금 매우 위급할 수 있어요. 즉시 1577-0199 또는 119에 연락하세요.";
+      }
+      if(sev==="없음/최소") return "현재 점수는 낮은 편이에요. 그래도 힘들면 주변의 믿을 만한 어른이나 친구와 이야기를 나눠 보세요.";
+      if(sev==="경도") return "가벼운 우울감이 감지돼요. 잠, 식사, 가벼운 운동 같은 일상 리듬을 챙겨 보세요.";
+      if(sev==="중등도") return "중등도 수준의 우울감이 보여요. 학교 상담실, 지역 정신건강복지센터 상담을 권해요.";
+      if(sev==="중등도-중증") return "우울감이 뚜렷합니다. 가까운 상담기관에 빠르게 연결하는 것을 권해요.";
+      return "점수가 높은 편이에요. 가능한 빠르게 전문 상담/진료를 받아 보세요.";
+    }
+
+    function submitPhqLocal(){
       phqPanel.classList.add('hidden');
-      resultBox.innerHTML='해석 중...';
-      try{
-        const r=await fetch('/api/interp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scores:answers,userLat,userLng})});
-        const j=await r.json();
-        if(!j.ok)throw new Error('서버오류');
-        const crisisHtml=j.crisis?`<div class="text-red-600 font-semibold mb-2">[고위험] 즉시 1577-0199 또는 119에 연락하세요.</div>`:'';
-        const aux=j.supportive?`<div class="mb-2">${j.supportive}</div>`:'';
-        resultBox.innerHTML=`${crisisHtml}${aux}<div>총점: <b>${j.total}</b> / 중증도: <b>${j.severity}</b></div><div class="text-xs text-gray-600 mt-2">이 도구는 선별용이며 진단/치료가 아닙니다.</div>`;
-        centersBox.innerHTML=`<h3 class="font-semibold mt-4 mb-2">가까운 상담 도움</h3><ul>${j.centersHtml||'<li>데이터가 없습니다.</li>'}</ul><div class="mt-2 text-sm">또는 즉시 <b>1577-0199</b> (정신건강상담전화)에 연락하세요.</div>`;
-      }catch{resultBox.innerHTML='오류가 발생했습니다.';}
+
+      const total=answers.reduce((a,b)=>a+(Number(b)||0),0);
+      const sev=severityLabel(total);
+      const crisis=(Number(answers[8])||0) >= 1;
+
+      const sup=supportiveText(total, sev, crisis);
+      const crisisHtml = crisis
+        ? `<div class="text-red-600 font-semibold mb-2">${sup}</div>`
+        : `<div class="mb-2">${sup}</div>`;
+
+      resultBox.innerHTML = `
+        ${crisisHtml}
+        <div>총점: <b>${total}</b> / 중증도: <b>${sev}</b></div>
+        <div class="text-xs text-gray-600 mt-2">이 도구는 선별용이며 진단/치료가 아닙니다.</div>
+      `;
+
+      // 서버 없이 쓸 수 있는 "가까운 도움" 기본 링크들
+      const kakaoQuery = encodeURIComponent("정신건강복지센터");
+      const mapLink = `https://map.kakao.com/?q=${kakaoQuery}`;
+      centersBox.innerHTML = `
+        <h3 class="font-semibold mt-4 mb-2">가까운 상담 도움</h3>
+        <ul class="list-disc pl-5 space-y-1">
+          <li><a class="link" target="_blank" href="${mapLink}">카카오맵에서 "정신건강복지센터" 검색</a></li>
+          <li>정신건강상담전화 <b>1577-0199</b> (24시간)</li>
+          <li>긴급 시 <b>119</b></li>
+        </ul>
+      `;
     }
   </script>
 </body>
