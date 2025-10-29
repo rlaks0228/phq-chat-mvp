@@ -2,31 +2,34 @@
 <html lang="ko">
 <head>
   <meta charset="utf-8" />
-  <title>청소년 마음도움 챗(MVP)</title>
+  <title>청소년 마음도움</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
   <style>
-    .bubble { border-radius: 12px; padding: 10px 12px; margin: 6px 0; }
-    .me { background:#e8f0ff; align-self:flex-end; }
-    .bot { background:#f5f5f5; align-self:flex-start; }
-    .phq-card { border:1px solid #ddd; border-radius:12px; padding:12px; margin:10px 0; }
+    .bubble{border-radius:12px;padding:10px 12px;margin:6px 0;max-width:80%;}
+    .me{background:#e8f0ff;align-self:flex-end;}
+    .bot{background:#f5f5f5;align-self:flex-start;}
+    .phq-card{border:1px solid #ddd;border-radius:12px;padding:12px;margin:10px 0;background:#fff;}
+    .chat-area{display:flex;flex-direction:column;height:520px;overflow-y:auto;background:white;padding:12px;border:1px solid #e5e7eb;border-radius:10px;}
   </style>
 </head>
 <body class="bg-gray-50">
-  <div class="max-w-4xl mx-auto p-4">
-    <h1 class="text-2xl font-bold mb-2">청소년 마음도움 챗 (MVP)</h1>
+  <div class="max-w-6xl mx-auto p-4">
+    <h1 class="text-2xl font-bold mb-1">청소년 마음도움</h1>
     <p class="text-sm text-gray-600 mb-4">
       이 서비스는 <b>선별(Screening)</b>과 <b>연결</b>을 돕기 위한 도구입니다. 진단이나 치료가 아닙니다.
     </p>
 
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <!-- 왼쪽: PHQ-9 -->
+    <!-- 본문: 좌우 2열 -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-2">
+      <!-- 좌: PHQ-9 -->
       <div>
         <div class="phq-card">
           <div class="flex justify-between items-center">
             <h2 class="font-semibold text-lg">PHQ-9 우울 자가검사</h2>
             <button id="startBtn" class="px-3 py-1 bg-blue-600 text-white rounded">검사 시작</button>
           </div>
+
           <div id="phqPanel" class="mt-3 hidden">
             <div id="qBox" class="mb-3 text-sm"></div>
             <div class="flex gap-2">
@@ -34,16 +37,17 @@
               <button id="nextBtn" class="px-3 py-1 bg-blue-600 text-white rounded">다음</button>
             </div>
           </div>
+
           <div id="resultBox" class="mt-4 text-sm"></div>
           <div id="centersBox" class="mt-4 text-sm"></div>
         </div>
       </div>
 
-      <!-- 오른쪽: 챗봇 -->
+      <!-- 우: 대화형 지원(항상 시연 모드) -->
       <div>
-        <div class="phq-card flex flex-col h-[520px]">
+        <div class="phq-card flex flex-col">
           <h2 class="font-semibold text-lg mb-2">대화형 지원</h2>
-          <div id="chatArea" class="flex-1 overflow-y-auto bg-white p-3 border rounded">
+          <div id="chatArea" class="chat-area">
             <div class="bubble bot">
               안녕, 여긴 마음도움 챗이야. 힘든 마음을 들려줘도 괜찮아.<br/>
               위기라면 <b>1577-0199 또는 119</b>에 지금 바로 연락해줘.
@@ -58,13 +62,54 @@
     </div>
 
     <p class="text-xs text-gray-500 mt-6">
-      ※ 응답 내용은 저장되지 않으며, 이 도구는 교육용/시연용 프로토타입입니다. 위기 시 즉시 1577-0199 또는 119로 연락하세요.
+      ※ 응답 내용은 저장되지 않으며, 이 도구는 교육용/시연용 프로토타입입니다. 위기 시 즉시 <b>1577-0199 또는 119</b>로 연락하세요.
     </p>
   </div>
 
   <script>
-    // ───────────────────────────────────────── PHQ-9 문항
-    const PHQ = [
+    // ======================== 공통 함수 ========================
+    function pushBubble(text, who='bot'){
+      const chatArea=document.getElementById('chatArea');
+      const div=document.createElement('div');
+      div.className=`bubble ${who}`;
+      div.innerHTML=(''+text).replace(/\n/g,'<br/>');
+      chatArea.appendChild(div);
+      chatArea.scrollTop=chatArea.scrollHeight;
+    }
+
+    // ======================== 챗봇 (시연 고정) ========================
+    const SCRIPT=[
+      "안녕, 여긴 마음도움 챗이야. 오늘 하루 어땠어?",
+      "음, 쉽지 않았겠다. 이렇게 말해줘서 정말 고마워.",
+      "요즘 가장 힘들었던 순간이 언제였는지 하나만 떠올려볼래?",
+      "그때 너의 몸이나 마음에서 어떤 신호가 있었는지도 같이 적어보자.",
+      "잠깐, 호흡을 같이 맞춰볼까? 4초 들이마시고, 4초 멈추고, 6초 내쉬기 × 3회.",
+      "만약 마음이 너무 벅차면 바로 도움을 받는 게 중요해. 1577-0199(정신건강 상담전화) 또는 119를 기억해줘.",
+      "가까운 상담센터나 보건소에 연결하면 더 체계적으로 도울 수 있어.",
+      "오늘 너를 버티게 해준 작은 것 하나만 적어볼래? (사람, 음악, 장소, 루틴 무엇이든 좋아)",
+      "앞으로 24시간 동안 스스로에게 해줄 수 있는 아주 작은 행동 하나를 정해보자. (물 한 컵, 10분 산책 같은 것)",
+      "네가 혼자가 아니라는 걸 꼭 기억해줘. 필요하면 언제든 다시 말 걸어줘.",
+      "이 대화는 선별/지지 목적이야. 진단이나 치료가 필요하면 전문가와 꼭 상의하자.",
+      "(다시 처음으로 돌아갈게!) 요즘 가장 힘들었던 순간이 언제였는지 하나만 떠올려볼래?"
+    ];
+    let scriptIdx=0;
+
+    const sendBtn=document.getElementById('sendBtn');
+    const chatInput=document.getElementById('chatInput');
+
+    sendBtn.onclick=()=>{
+      const msg=chatInput.value.trim();
+      if(!msg) return;
+      pushBubble(msg,'me');
+      chatInput.value='';
+      const line=SCRIPT[scriptIdx]||"(끝)";
+      pushBubble(line,'bot');
+      scriptIdx=(scriptIdx+1)%SCRIPT.length;
+    };
+    chatInput.addEventListener('keydown',e=>{if(e.key==='Enter')sendBtn.click();});
+
+    // ======================== PHQ-9 (자동완료 제거) ========================
+    const PHQ=[
       "일(공부)에 흥미나 즐거움이 거의 없다",
       "기분이 가라앉거나, 우울하거나, 희망이 없다",
       "잠들기 어렵거나 자주 깨거나 너무 많이 잔다",
@@ -75,128 +120,63 @@
       "남들이 알아챌 만큼 너무 느리게 움직이거나 말한다, 혹은 너무 초조해서 가만히 있지 못한다",
       "차라리 죽는 것이 낫겠다는 생각을 하거나, 자신을 해칠 생각을 했다"
     ];
-    const CHOICES = ["전혀 아니다(0)", "몇 일 동안(1)", "일주일 이상(2)", "거의 매일(3)"];
+    const CHOICES=["전혀 아니다(0)","몇 일 동안(1)","일주일 이상(2)","거의 매일(3)"];
+    let idx=0, answers=Array(9).fill(null), userLat=null, userLng=null;
 
-    let idx = 0;
-    let answers = Array(9).fill(null);
-    let userLat = null, userLng = null;
+    const startBtn=document.getElementById('startBtn');
+    const phqPanel=document.getElementById('phqPanel');
+    const qBox=document.getElementById('qBox');
+    const prevBtn=document.getElementById('prevBtn');
+    const nextBtn=document.getElementById('nextBtn');
+    const resultBox=document.getElementById('resultBox');
+    const centersBox=document.getElementById('centersBox');
 
-    const startBtn = document.getElementById('startBtn');
-    const phqPanel = document.getElementById('phqPanel');
-    const qBox = document.getElementById('qBox');
-    const prevBtn = document.getElementById('prevBtn');
-    const nextBtn = document.getElementById('nextBtn');
-    const resultBox = document.getElementById('resultBox');
-    const centersBox = document.getElementById('centersBox');
-
-    startBtn.onclick = async () => {
-      idx = 0; answers = Array(9).fill(null);
+    startBtn.onclick=()=>{
+      idx=0;answers=Array(9).fill(null);
       phqPanel.classList.remove('hidden');
-      resultBox.innerHTML = ''; centersBox.innerHTML = '';
+      resultBox.innerHTML='';centersBox.innerHTML='';
       renderQ();
-
-      // 위치 권한(선택)
-      if (navigator.geolocation) {
+      if(navigator.geolocation){
         navigator.geolocation.getCurrentPosition(
-          (pos) => { userLat = pos.coords.latitude; userLng = pos.coords.longitude; },
-          () => { /* 사용자가 거부해도 됨 */ },
-          { enableHighAccuracy: false, timeout: 5000, maximumAge: 0 }
-        );
+          p=>{userLat=p.coords.latitude;userLng=p.coords.longitude;},()=>{},
+          {enableHighAccuracy:false,timeout:5000,maximumAge:0});
       }
     };
 
-    function renderQ() {
-      const a = answers[idx];
-      qBox.innerHTML = `
-        <div class="mb-2"><b>${idx + 1}. ${PHQ[idx]}</b></div>
+    function renderQ(){
+      const a=answers[idx];
+      qBox.innerHTML=`
+        <div class="mb-2"><b>${idx+1}. ${PHQ[idx]}</b></div>
         <div class="space-y-1">
-          ${CHOICES.map((t, i) => `
+          ${CHOICES.map((t,i)=>`
             <label class="flex items-center gap-2">
-              <input type="radio" name="ans" value="${i}" ${a===i?'checked':''} />
+              <input type="radio" name="ans" value="${i}" ${a===i?'checked':''}/>
               <span>${t}</span>
             </label>`).join('')}
-        </div>
-      `;
+        </div>`;
     }
+    prevBtn.onclick=()=>{if(idx>0){idx--;renderQ();}};
+    nextBtn.onclick=async()=>{
+      const sel=document.querySelector('input[name="ans"]:checked');
+      if(!sel){alert('하나를 선택해 주세요');return;}
+      answers[idx]=Number(sel.value);
+      if(idx<8){idx++;renderQ();return;}
+      await submitPhq();
+    };
 
-    prevBtn.onclick = () => { if (idx > 0) { idx--; renderQ(); } };
-
-    nextBtn.onclick = async () => {
-      const sel = document.querySelector('input[name="ans"]:checked');
-      if (!sel) { alert('하나를 선택해 주세요'); return; }
-      answers[idx] = Number(sel.value);
-      if (idx < 8) { idx++; renderQ(); return; }
-
-      // 완료 → 서버로 해석 요청
+    async function submitPhq(){
       phqPanel.classList.add('hidden');
-      resultBox.innerHTML = '해석 중...';
-      try {
-        const r = await fetch('/api/interp', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ scores: answers, userLat, userLng })
-        });
-        const j = await r.json();
-        if (!j.ok) throw new Error('서버 오류');
-
-        const crisisHtml = j.crisis
-          ? `<div class="text-red-600 font-semibold mb-2">[고위험] 지금 매우 위급할 수 있어요. 즉시 1577-0199 또는 119에 연락하세요.</div>`
-          : '';
-
-        const aux = j.supportive ? `<div class="mb-2">${j.supportive}</div>` : '';
-
-        resultBox.innerHTML = `
-          ${crisisHtml}
-          ${aux}
-          <div>총점: <b>${j.total}</b> / 중증도: <b>${j.severity}</b></div>
-          <div class="text-xs text-gray-600 mt-2">이 도구는 선별용이며 진단/치료가 아닙니다.</div>
-        `;
-
-        centersBox.innerHTML = `
-          <h3 class="font-semibold mt-4 mb-2">가까운 상담 도움</h3>
-          <ul>${j.centersHtml || '<li>데이터가 없습니다.</li>'}</ul>
-          <div class="mt-2 text-sm">또는 즉시 <b>1577-0199</b> (정신건강상담전화)에 연락하세요.</div>
-        `;
-      } catch (e) {
-        resultBox.innerHTML = '오류가 발생했습니다. 잠시 후 다시 시도해 주세요.';
-      }
-    };
-
-    // ───────────────────────────────────────── 챗봇
-    const chatArea = document.getElementById('chatArea');
-    const chatInput = document.getElementById('chatInput');
-    const sendBtn = document.getElementById('sendBtn');
-
-    function pushBubble(text, who='bot') {
-      const div = document.createElement('div');
-      div.className = `bubble ${who}`;
-      div.innerHTML = text.replace(/\n/g,'<br/>');
-      chatArea.appendChild(div);
-      chatArea.scrollTop = chatArea.scrollHeight;
+      resultBox.innerHTML='해석 중...';
+      try{
+        const r=await fetch('/api/interp',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({scores:answers,userLat,userLng})});
+        const j=await r.json();
+        if(!j.ok)throw new Error('서버오류');
+        const crisisHtml=j.crisis?`<div class="text-red-600 font-semibold mb-2">[고위험] 즉시 1577-0199 또는 119에 연락하세요.</div>`:'';
+        const aux=j.supportive?`<div class="mb-2">${j.supportive}</div>`:'';
+        resultBox.innerHTML=`${crisisHtml}${aux}<div>총점: <b>${j.total}</b> / 중증도: <b>${j.severity}</b></div><div class="text-xs text-gray-600 mt-2">이 도구는 선별용이며 진단/치료가 아닙니다.</div>`;
+        centersBox.innerHTML=`<h3 class="font-semibold mt-4 mb-2">가까운 상담 도움</h3><ul>${j.centersHtml||'<li>데이터가 없습니다.</li>'}</ul><div class="mt-2 text-sm">또는 즉시 <b>1577-0199</b> (정신건강상담전화)에 연락하세요.</div>`;
+      }catch{resultBox.innerHTML='오류가 발생했습니다.';}
     }
-
-    sendBtn.onclick = async () => {
-      const msg = chatInput.value.trim();
-      if (!msg) return;
-      pushBubble(msg, 'me');
-      chatInput.value='';
-      try {
-        const r = await fetch('/api/chat', {
-          method:'POST',
-          headers:{'Content-Type':'application/json'},
-          body: JSON.stringify({ message: msg })
-        });
-        const j = await r.json();
-        if (j.ok) pushBubble(j.reply, 'bot');
-        else pushBubble('서버 오류가 발생했어요.', 'bot');
-      } catch {
-        pushBubble('연결 오류가 발생했어요.', 'bot');
-      }
-    };
-
-    chatInput.addEventListener('keydown', e => {
-      if (e.key === 'Enter') sendBtn.click();
-    });
   </script>
 </body>
 </html>
