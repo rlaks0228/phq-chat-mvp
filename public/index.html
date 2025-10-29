@@ -5,6 +5,8 @@
   <title>청소년 마음도움</title>
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+  <!-- CSV 파서 (브라우저에서 바로 CSV 읽기) -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
   <style>
     .bubble{border-radius:12px;padding:10px 12px;margin:6px 0;max-width:80%;}
     .me{background:#e8f0ff;align-self:flex-end;}
@@ -67,7 +69,7 @@
   </div>
 
   <script>
-    /* =============== 공통 =============== */
+    /* ======================== 공통 ======================== */
     function pushBubble(text, who='bot'){
       const chatArea=document.getElementById('chatArea');
       const div=document.createElement('div');
@@ -77,7 +79,7 @@
       chatArea.scrollTop=chatArea.scrollHeight;
     }
 
-    /* =============== 챗봇: 시연 고정 스크립트 =============== */
+    /* ======================== 챗봇 (시연 고정) ======================== */
     const SCRIPT=[
       "안녕, 여긴 마음도움 챗이야. 오늘 하루 어땠어?",
       "음, 쉽지 않았겠다. 이렇게 말해줘서 정말 고마워.",
@@ -108,7 +110,7 @@
     };
     chatInput.addEventListener('keydown',e=>{if(e.key==='Enter')sendBtn.click();});
 
-    /* =============== PHQ-9: 클라이언트 해석(서버 호출 없음) =============== */
+    /* ======================== PHQ-9 (클라이언트 해석) ======================== */
     const PHQ=[
       "일(공부)에 흥미나 즐거움이 거의 없다",
       "기분이 가라앉거나, 우울하거나, 희망이 없다",
@@ -122,8 +124,7 @@
     ];
     const CHOICES=["전혀 아니다(0)","몇 일 동안(1)","일주일 이상(2)","거의 매일(3)"];
 
-    let idx=0, answers=Array(9).fill(null);
-    let userLat=null, userLng=null; // 향후 지오링크용(선택)
+    let idx=0, answers=Array(9).fill(null), userLat=null, userLng=null;
 
     const startBtn=document.getElementById('startBtn');
     const phqPanel=document.getElementById('phqPanel');
@@ -133,43 +134,57 @@
     const resultBox=document.getElementById('resultBox');
     const centersBox=document.getElementById('centersBox');
 
-    startBtn.onclick=()=>{
-      idx=0; answers=Array(9).fill(null);
-      phqPanel.classList.remove('hidden');
-      resultBox.innerHTML=''; centersBox.innerHTML='';
-      renderQ();
+    // CSV 메모리
+    let CENTER_ROWS = []; // {name,address,phone,lat,lng}
 
-      // 위치 권한은 선택. 추후 지도 링크에 활용 가능
-      if(navigator.geolocation){
-        navigator.geolocation.getCurrentPosition(
-          (p)=>{ userLat=p.coords.latitude; userLng=p.coords.longitude; },
-          ()=>{}, { enableHighAccuracy:false, timeout:4000, maximumAge:0 }
-        );
+    // CSV 로드 (public/data/centers.csv)
+    async function loadCentersCsv(){
+      try{
+        const res = await fetch('/data/centers.csv', {cache:'no-store'});
+        if(!res.ok) return [];
+        const text = await res.text();
+        return new Promise((resolve)=>{
+          Papa.parse(text, {
+            header:true,
+            skipEmptyLines:true,
+            dynamicTyping:true,
+            complete: (out)=>{
+              // 매핑: 다양한 한글/영문 헤더를 공통키로 변환
+              const norm = (k)=> (k||"").toString().trim().toLowerCase();
+              const rows = out.data.map(row=>{
+                // 원본 헤더를 소문자 비교
+                const mapKey = {};
+                for(const k in row){ mapKey[norm(k)] = k; }
+
+                const name = row[ mapKey["기관명"] || mapKey["name"] ] || "";
+                const address = row[ mapKey["주소"] || mapKey["address"] ] || "";
+                const phone = row[ mapKey["전화번호"] || mapKey["phone"] ] || "";
+                const lat = Number(row[ mapKey["위도"] || mapKey["lat"] || mapKey["latitude"] ]);
+                const lng = Number(row[ mapKey["경도"] || mapKey["lng"] || mapKey["longitude"] ]);
+
+                return { name: String(name||"").trim(),
+                         address: String(address||"").trim(),
+                         phone: String(phone||"").trim(),
+                         lat: isFinite(lat)? lat: NaN,
+                         lng: isFinite(lng)? lng: NaN };
+              }).filter(r=>r.name || r.address);
+              resolve(rows);
+            }
+          });
+        });
+      }catch{
+        return [];
       }
-    };
-
-    function renderQ(){
-      const a=answers[idx];
-      qBox.innerHTML=`
-        <div class="mb-2"><b>${idx+1}. ${PHQ[idx]}</b></div>
-        <div class="space-y-1">
-          ${CHOICES.map((t,i)=>`
-            <label class="flex items-center gap-2">
-              <input type="radio" name="ans" value="${i}" ${a===i?'checked':''}/>
-              <span>${t}</span>
-            </label>`).join('')}
-        </div>`;
     }
 
-    prevBtn.onclick=()=>{ if(idx>0){ idx--; renderQ(); } };
-
-    nextBtn.onclick=()=>{
-      const sel=document.querySelector('input[name="ans"]:checked');
-      if(!sel){ alert('하나를 선택해 주세요'); return; }
-      answers[idx]=Number(sel.value);
-      if(idx<8){ idx++; renderQ(); return; }
-      submitPhqLocal(); // 서버 호출 없이 해석
-    };
+    function haversine(lat1, lon1, lat2, lon2){
+      const toRad = (d)=> d*Math.PI/180;
+      const R = 6371; // km
+      const dLat = toRad(lat2-lat1);
+      const dLon = toRad(lon2-lon1);
+      const a = Math.sin(dLat/2)**2 + Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
+      return 2*R*Math.asin(Math.sqrt(a));
+    }
 
     function severityLabel(total){
       if(total<=4) return "없음/최소";
@@ -190,9 +205,68 @@
       return "점수가 높은 편이에요. 가능한 빠르게 전문 상담/진료를 받아 보세요.";
     }
 
-    function submitPhqLocal(){
-      phqPanel.classList.add('hidden');
+    async function recommendCenters(lat, lng, topN=6){
+      if(!CENTER_ROWS.length){
+        CENTER_ROWS = await loadCentersCsv();
+      }
+      let arr = CENTER_ROWS.filter(r=> isFinite(r.lat) && isFinite(r.lng));
+      if(!arr.length){
+        return `<li>센터 데이터가 없거나 좌표가 비어 있습니다. 관리자에게 문의해 주세요.</li>`;
+      }
+      if(isFinite(lat) && isFinite(lng)){
+        arr = arr.map(r=> ({...r, d: haversine(lat,lng,r.lat,r.lng)}))
+                 .sort((a,b)=>(a.d||1e9)-(b.d||1e9));
+      }
+      const sel = arr.slice(0, topN);
+      return sel.map(c=>{
+        const q = encodeURIComponent(c.address || c.name);
+        const km = isFinite(c.d) ? ` • 약 ${c.d.toFixed(1)} km` : "";
+        const tel = c.phone ? ` | 📞 ${c.phone}` : "";
+        return `<li class="mb-2">
+          <div><b>${c.name || "(기관명 없음)"}</b>${km}</div>
+          <div>${c.address || ""}${tel}</div>
+          <div><a class="link" target="_blank" href="https://map.kakao.com/?q=${q}">지도 열기</a></div>
+        </li>`;
+      }).join("");
+    }
 
+    startBtn.onclick=async ()=>{
+      idx=0; answers=Array(9).fill(null);
+      phqPanel.classList.remove('hidden');
+      resultBox.innerHTML=''; centersBox.innerHTML='';
+      CENTER_ROWS = await loadCentersCsv(); // 미리 로드
+      renderQ();
+
+      // 위치 권한 (거부해도 동작: 거리 정렬 없이 상위 리스트만)
+      if(navigator.geolocation){
+        navigator.geolocation.getCurrentPosition(
+          (p)=>{ userLat=p.coords.latitude; userLng=p.coords.longitude; },
+          ()=>{}, { enableHighAccuracy:false, timeout:5000, maximumAge:0 }
+        );
+      }
+    };
+
+    function renderQ(){
+      const a=answers[idx];
+      qBox.innerHTML=`
+        <div class="mb-2"><b>${idx+1}. ${PHQ[idx]}</b></div>
+        <div class="space-y-1">
+          ${CHOICES.map((t,i)=>`
+            <label class="flex items-center gap-2">
+              <input type="radio" name="ans" value="${i}" ${a===i?'checked':''}/>
+              <span>${t}</span>
+            </label>`).join('')}
+        </div>`;
+    }
+    prevBtn.onclick=()=>{ if(idx>0){ idx--; renderQ(); } };
+    nextBtn.onclick=async ()=>{
+      const sel=document.querySelector('input[name="ans"]:checked');
+      if(!sel){ alert('하나를 선택해 주세요'); return; }
+      answers[idx]=Number(sel.value);
+      if(idx<8){ idx++; renderQ(); return; }
+
+      // 로컬 해석 + 근처 센터 추천
+      phqPanel.classList.add('hidden');
       const total=answers.reduce((a,b)=>a+(Number(b)||0),0);
       const sev=severityLabel(total);
       const crisis=(Number(answers[8])||0) >= 1;
@@ -208,18 +282,14 @@
         <div class="text-xs text-gray-600 mt-2">이 도구는 선별용이며 진단/치료가 아닙니다.</div>
       `;
 
-      // 서버 없이 쓸 수 있는 "가까운 도움" 기본 링크들
-      const kakaoQuery = encodeURIComponent("정신건강복지센터");
-      const mapLink = `https://map.kakao.com/?q=${kakaoQuery}`;
+      centersBox.innerHTML = `<div class="text-gray-500">가까운 센터를 찾는 중...</div>`;
+      const listHtml = await recommendCenters(userLat, userLng, 8);
       centersBox.innerHTML = `
         <h3 class="font-semibold mt-4 mb-2">가까운 상담 도움</h3>
-        <ul class="list-disc pl-5 space-y-1">
-          <li><a class="link" target="_blank" href="${mapLink}">카카오맵에서 "정신건강복지센터" 검색</a></li>
-          <li>정신건강상담전화 <b>1577-0199</b> (24시간)</li>
-          <li>긴급 시 <b>119</b></li>
-        </ul>
+        <ul>${listHtml}</ul>
+        <div class="mt-2 text-sm">또는 즉시 <b>1577-0199</b> (정신건강상담전화)에 연락하세요.</div>
       `;
-    }
+    };
   </script>
 </body>
 </html>
