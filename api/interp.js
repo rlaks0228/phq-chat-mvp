@@ -3,7 +3,6 @@ const path = require("path");
 const { parse } = require("csv-parse/sync");
 const OpenAI = require("openai");
 
-// CSV를 전역 캐시에 한 번만 로드
 let centers = null;
 function loadCenters() {
   if (centers) return centers;
@@ -26,10 +25,26 @@ function distKm(lat1, lon1, lat2, lon2) {
   const R = 6371;
   const dLat = toRad(lat2 - lat1);
   const dLon = toRad(lon2 - lon1);
-  const a =
-    Math.sin(dLat / 2) ** 2 +
-    Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+  const a = Math.sin(dLat/2)**2 +
+    Math.cos(toRad(lat1))*Math.cos(toRad(lat2))*Math.sin(dLon/2)**2;
   return 2 * R * Math.asin(Math.sqrt(a));
+}
+
+async function gptSummary(total, severity, crisis) {
+  const apiKey = process.env.OPENAI_API_KEY;
+  if (!apiKey) return "";
+  const MODEL = process.env.MODEL || "gpt-4.1-mini";
+  const client = new OpenAI({ apiKey });
+  const sys =
+    "PHQ-9 결과로 3~5문장 공감 메시지. 모호하면 모른다고 말하되, 위기(crisis=true)면 맨 앞에 [고위험] + 1577-0199/119.";
+  const usr = JSON.stringify({ total, severity, crisis });
+  const resp = await client.responses.create({
+    model: MODEL,
+    input: [{ role: "system", content: sys }, { role: "user", content: usr }],
+    max_output_tokens: 300,
+    temperature: 0.5
+  });
+  return resp.output_text ?? (resp.output?.[0]?.content?.[0]?.text || "");
 }
 
 module.exports = async (req, res) => {
@@ -73,29 +88,14 @@ module.exports = async (req, res) => {
         </li>`;
     }).join("");
 
-    // (선택) 공감 메시지: 키 없으면 생략
+    // 공감 메시지 (키가 있으면 생성)
     let supportive = "";
-    const apiKey = process.env.OPENAI_API_KEY;
-    const MODEL = process.env.MODEL || "o4-mini";
-    if (apiKey) {
-      try {
-        const client = new OpenAI({ apiKey });
-        const sys =
-          "PHQ-9 결과로 3~4문장 공감 메시지. 진단/치료 금지. crisis=true면 맨 앞 [고위험]+1577-0199/119.";
-        const usr = JSON.stringify({ total, severity, crisis });
-        const resp = await client.responses.create({
-          model: MODEL,
-          input: [{ role: "system", content: sys }, { role: "user", content: usr }],
-          max_output_tokens: 200,
-          temperature: 0.4
-        });
-        supportive = resp.output_text ?? (resp.output?.[0]?.content?.[0]?.text || "");
-      } catch {}
-    }
+    try { supportive = await gptSummary(total, severity, crisis); } catch {}
 
     return res.json({ ok: true, total, severity, crisis, supportive, centersHtml });
+
   } catch (e) {
-    console.error(e);
+    console.error("interp api error:", e);
     return res.status(500).json({ ok: false, error: "서버 오류" });
   }
 };
